@@ -1,0 +1,405 @@
+#-------------脚本开始-------------
+#----------艾嘉健康172.16.34.104 hc-dev-deploy.sh新添功能清单----------
+#2）更新ijhealth库中dict_sys_parameter表下的parameter_value的值中的IP地址，指向对应的新测试库IP地址:101->102，109->119
+#3）增加项目op：8086
+#4）添加需要更新的文件：common.js，config.json  ------2016.06.15
+#5）添加消息中线地址替换：223->233.  加入正式库上地址修改，使本脚本能同时修改来自于开发和正式库的数据库信息--------2016.07.05
+#6）添加修改config.json 中 8098 dev -> 8098 test-------2016.07.08
+#7）添加修改表cfg_charge_order中ip指令 --------2016.08.19
+#8) 添加数据库更新语句，将192.168.1.4：80 更换为 wx.aj.zoenet.cn; 增加wget_url 变量；增加三份备份；增加日志回滚功能-------2016.08.24
+#9）加入数组功能-------2016.09.08
+
+#---------配置文件存放地址/soft/conf----------------------
+
+#!/bin/sh
+
+############################################################################
+#------------------------------------路径定义区-----------------------------
+############################################################################
+
+export JAVA_HOME=/soft/jdk8
+#-----------路径定义----------
+base_path=/soft
+cd $base_path
+nowdate=`date +%Y%m%d`
+deploy_bak_path=$base_path/deploy_dir/deploy_bak
+
+#-----------常变变量定义--------------
+wget_path=http://172.16.34.207:8080/deploy_dev_hc
+base_path=/soft
+
+#-----------数组变量定义------------
+array_path=($base_path/tomcat8_oauth_8080 $base_path/tomcat8_doc_8081 $base_path/tomcat8_pub_8082 $base_path/tomcat8_ih_8083 $base_path/tomcat8_task_8084 $base_path/tomcat8_order_8085 $base_path/tomcat8_op_8086)
+array_tomcat=(tomcat8_oauth_8080 tomcat8_doc_8081 tomcat8_pub_8082 tomcat8_ih_8083 tomcat8_task_8084 tomcat8_order_8085 tomcat8_op_8086)
+array_war=(zoe-user-oauth-web.war zoe-ijhealth-doctor-web.war zoe-ijhealth-public-web.war zoe-ijhealth-ih-web.war zoe-ijhealth-task-web.war zoe-ijhealth-order-web.war zoe-ijhealth-op-web.war)
+array_wget_url=($wget_path/$nowdate/zoe-user-oauth-web.war $wget_path/$nowdate/zoe-ijhealth-doctor-web.war $wget_path/$nowdate/zoe-ijhealth-public-web.war $wget_path/$nowdate/zoe-ijhealth-ih-web.war $wget_path/$nowdate/zoe-ijhealth-task-web.war $wget_path/$nowdate/zoe-ijhealth-order-web.war $wget_path/$nowdate/zoe-ijhealth-op-web.war)
+array_log=(oauthWGET.log docWGET.log pubWGET.log ihWGET.log taskWGET.log orderWGET.log opWGET.log)
+array_name=(oauth doc pub ih task order op)
+array_port=(8080 8081 8082 8083 8084 8085 8086)
+#----------war包下载地址----------
+#wget_oauth_url=$wget_path/$nowdate/zoe-user-oauth-web.war
+#wget_doc_url=$wget_path/$nowdate/zoe-ijhealth-doctor-web.war
+#wget_pub_url=$wget_path/$nowdate/zoe-ijhealth-public-web.war
+#wget_ih_url=$wget_path/$nowdate/zoe-ijhealth-ih-web.war
+#wget_task_url=$wget_path/$nowdate/zoe-ijhealth-task-web.war
+#wget_order_url=$wget_path/$nowdate/zoe-ijhealth-order-web.war
+#wget_op_url=$wget_path/$nowdate/zoe-ijhealth-op-web.war
+
+#----------mysql 操作语句定义----------
+HOSTNAME="172.16.34.142"
+
+PORT="3306"
+USERNAME="zoedba"
+PASSWORD="zoedba@)!^"
+DBNAME="ijhealth"
+TABLENAME="dict_sys_parameter"
+
+#----------更新来自开发库的数据
+update_db_sql_1="update dict_sys_parameter SET parameter_value=replace (parameter_value,'172.16.34.100','172.16.34.130');"
+update_db_sql_2="update dict_sys_parameter SET parameter_value=replace (parameter_value,'172.16.34.109','172.16.34.119');"
+update_db_sql_3="update dict_sys_parameter SET parameter_value=replace (parameter_value,'172.16.34.101','172.16.34.104');"
+update_db_sql_4="update dict_sys_parameter SET parameter_value=replace (parameter_value,'172.16.34.223','172.16.34.233');"
+#----------更新来自正式库的数据
+update_db_sql_5="update dict_sys_parameter SET parameter_value=replace (parameter_value,'192.168.1.11','172.16.34.130');"
+update_db_sql_6="update dict_sys_parameter SET parameter_value=replace (parameter_value,'192.168.1.12','172.16.34.119');"
+update_db_sql_7="update dict_sys_parameter SET parameter_value=replace (parameter_value,'192.168.1.13','172.16.34.104');"
+update_db_sql_8="update dict_sys_parameter SET parameter_value=replace (parameter_value,'192.168.1.6','172.16.34.233');"
+update_db_sql_9="update dict_sys_parameter SET parameter_value=replace (parameter_value,'192.168.1.4:80','wx.aj.zoenet.cn');"
+
+
+
+
+#oauth_path=$base_path/tomcat8_oauth_8080
+#doc_path=$base_path/tomcat8_doc_8081
+#pub_path=$base_path/tomcat8_pub_8082
+#ih_path=$base_path/tomcat8_ih_8083
+#task_path=$base_path/tomcat8_task_8084
+#order_path=$base_path/tomcat8_order_8085
+#op_path=$base_path/tomcat8_op_8086
+
+
+
+#for(( i = 0; i < ${#array_tomcat[@]}; i++))
+#do
+#    #${array_path[$i]} = $base_path/${array_tomcat[$i]}
+#    echo ${array_path[$i]}
+#done
+
+wget_log_path=$base_path/deploy_dir/wgetlog
+
+
+
+
+
+#----------文件名定义----------
+replace_file_1=dao.commons.config.properties
+replace_file_2=common.js
+replace_file_3=config.json
+
+############################################################################
+#------------------------------------函数定义区-----------------------------
+############################################################################
+
+
+
+#----------更新ijhealth库中dict_sys_parameter表下的parameter_value中的值，把172.16.34.101 改为 172.16.34.102，109改为119， 100改为110----------
+function updateDB(){
+    echo "正在更新ijhealth 中相应的参数。。。。。。"
+    echo "正在将172.16.34.100 改为 172.16.34.110。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_1}"
+    echo "更新成功！"
+    sleep 1s
+
+    echo "正在将172.16.34.109 改为 172.16.34.119。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_2}"
+    echo "更新成功！"
+    sleep 1s
+
+    echo "172.16.34.101 改为 172.16.34.102。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_3}"
+    echo "更新成功！"
+
+    echo "172.16.34.223 改为 172.16.34.233。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_4}"
+    echo "更新成功！"
+
+
+
+    echo "正在将192.168.1.11 改为 172.16.34.110。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_5}"
+    echo "更新成功！"
+    sleep 1s
+
+    echo "正在将192.168.1.12 改为 172.16.34.119。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_6}"
+    echo "更新成功！"
+    sleep 1s
+
+    echo "192.168.1.13 改为 172.16.34.102。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_7}"
+    echo "更新成功！"
+
+    echo "192.168.1.16 改为 172.16.34.233。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_8}"
+    echo "更新成功！"
+
+    echo "192.168.1.4 改为 wx.aj.zoenet.cn。。。。。。"
+    mysql -h${HOSTNAME} -P${PORT} -u${USERNAME} -p${PASSWORD} ijhealth -e"${update_db_sql_9}"
+    echo "更新成功！"
+}
+
+#----------发布函数----------
+#function deploy的参数
+#$1=zoe-user-oauth-web.war
+#$2=oauthWGET.log
+#$3=$oauth_path
+#$4=oauth
+#$5=tomcat8_oauth_8080
+#$6=8080
+#$7=$wget_
+
+function deploy(){
+
+    echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+    echo "开始发布$5包"
+    sleep 3s
+
+    #----------替换函数：将指定文件中所有的“172.16.34.148”字段替换成“172.16.34.146"----------
+    #$1=$oauth_path
+    #$2=tomcat8_oauth_8080
+
+#    function replace_ipaddr(){
+#        cd $1/webapps/ROOT/WEB-INF/classes
+#
+#        #----------如果找到文件：dao.commons.config.properties，则替换文件内的ip地址为新测试库ip:  148->146,147->145----------
+#        if [ -f $1/webapps/ROOT/WEB-INF/classes/$replace_file_1 ]; then
+#            echo "正在更新$2中$replace_file_1文件的新数据库地址，请稍后。。。。。。"
+#            cp -f /soft/conf/$replace_file_1  $1/webapps/ROOT/WEB-INF/classes
+#            if [ $? = 0 ];then
+#            echo "$2中的$replace_file_1文件更新成功！"
+#                echo "$2中的$replace_file_1文件更新成功！" >> $wget_log_path/$nowdate/deploy_logs.txt
+#                sleep 1s
+#            else
+#                echo "$2中的$replace_file_1文件更新失败！"
+#                echo "$2中的$replace_file_1文件更新失败！" >> $wget_log_path/$nowdate/deploy_logs.txt
+#                sleep 1s
+#            fi
+#        else
+#            echo "没找到dao文件哦~"
+#        fi
+#
+#       
+#        #----------替换tomcat8_op_8086下的common.js, config.json文件，   ----------
+#        if [ $2 == "tomcat8_op_8086" ]; then
+#            echo "正在更新tomcat8_op_8086中的$replace_file_2文件"
+#            cp -rf /soft/conf/8086/$replace_file_2 $op_path/webapps/ROOT/js
+#            if [ $? = 0 ];then
+#                echo "$2中的$replace_file_2文件更新成功！"
+#                echo "$2中的$replace_file_2文件更新成功！" >> $wget_log_path/$nowdate/deploy_logs.txt
+#                sleep 1s
+#            else
+#                echo "$2中的$replace_file_2文件更新失败！"
+#                echo "$2中的$replace_file_2文件更新失败！" >> $wget_log_path/$nowdate/deploy_logs.txt
+#                sleep 1s
+#            fi
+#           
+#            echo "修改$op_path 的$replace_file_3 文件"
+#            cp -rf /soft/conf/8086/$replace_file_3  $op_path/webapps/ROOT/plugins/ueditor/jsp/
+#            if [ $? = 0 ];then
+#                echo "$2中的$replace_file_3文件更新成功！"
+#                echo "$2中的$replace_file_3文件更新成功！" >> $wget_log_path/$nowdate/deploy_logs.txt
+#                sleep 1s
+#            else
+#                echo "$2中的$replace_file_3文件更新失败！"
+#                echo "$2中的$replace_file_3文件更新失败！" >> $wget_log_path/$nowdate/deploy_logs.txt
+#            fi 
+#        fi
+#    }
+    #------------下载war包-------------------------
+    echo "正在努力下载 $1......";
+    sleep 3s
+    wget -o $wget_log_path/$nowdate/$2 -O $deploy_bak_path/$nowdate/$1 -c $7
+    if [ $? = 0 ];then
+
+        #----------如果有启动监听，关闭tomcat----------
+        if [ $(netstat -ntlp|grep -c $6) -gt 0 ];then
+            echo "监听到有Tomcat正在使用，尝试关闭Tomcat......"
+            $3/bin/shutdown.sh
+
+            #杀死所有残留进程，防止出现 java.net.ConnectException: 连接拒绝问题。Tomcat关闭状态下不能重复关闭，否则系统会报错！
+            #ps -ef|grep tomcat|grep -v tomcat|awk '{print $2}' |xargs kill -9
+            echo "成功关闭$6端口！"
+            sleep 3s
+        fi
+        #-----------备份当前程序(一共备份三份，当超过三份的时候删除最旧的一份）----------------
+        if [ -d $base_path/tags/$5/$nowdate/$5.3 && -d $base_path/tags/$5/$nowdate/$5.2 && -d $base_path/tags/$5/$nowdate/$5.1 ];then
+            echo "正在删除 $5.3 "
+            rm -rf $base_path/tags/$5/$nowdate/$5.3
+            echo "删除$5.3成功！"
+            echo "删除$5.3成功！" >> $wget_log_path/$nowdate/deploy_logs.txt
+        fi
+
+        if [ -d $base_path/tags/$5/$nowdate/$5.2 && -d $base_path/tags/$5/$nowdate/$5.1 ];then
+            echo "正在重命名 $5.2 到 $5.3 "
+            mv $base_path/tags/$5/$nowdate/$5.2 $base_path/tags/$5/$nowdate/$5.3
+            echo "重命名 $5.2 到 $5.3成功！"
+            echo "重命名 $5.2 到 $5.3成功！" >> $wget_log_path/$nowdate/deploy_logs.txt
+        fi
+
+        if [ -d $base_path/tags/$5/$nowdate/$5.1 ];then
+            echo "正在重命名 $5.2 到 $5.3 "
+            mv $base_path/tags/$5/$nowdate/$5.1 $base_path/tags/$5/$nowdate/$5.2
+            echo "重命名 $5.1 到 $5.2成功！"
+            echo "重命名 $5.1 到 $5.2成功！" >> $wget_log_path/$nowdate/deploy_logs.txt
+        fi
+
+
+
+        echo "正在备份$5。。。。。。"
+        if [ ! -d $base_path/tags/$5/$nowdate ];then
+            mkdir $base_path/tags/$5/$nowdate
+        fi
+
+        mv  $base_path/$5/webapps/ROOT  $base_path/tags/$5/$nowdate/$5.1
+        if [ $? = 0 ];then
+            echo "$5 备份成功!"
+            echo "$5 备份成功!" >> $wget_log_path/$nowdate/deploy_logs.txt
+        else   
+            echo "$5 备份失败!"
+            echo "$5 备份失败!" >> $wget_log_path/$nowdate/deploy_logs.txt
+        fi
+
+        #----------新建webapps/ROOT----------
+        if [ ! -d $base_path/$5/webapps/ROOT ];then
+            echo "新建ROOT"
+            mkdir $base_path/$5/webapps/ROOT
+        fi   
+
+        #----------解压项目war包----------
+        unzip -o $deploy_bak_path/$nowdate/$1 -d $3/webapps/ROOT
+        echo "unziped $deploy_bak_path/$nowdate/$1 ......"
+        sleep 3s
+
+
+#        #----------替换指定文件的IP地址----------
+#        replace_ipaddr $3  $5
+#        sleep 3s
+#        echo "准备就绪，启动Tomcat......"
+#        sleep 2s
+        cd $3
+        bin/startup.sh
+        echo "$5包发布成功!"
+        echo "$5包发布成功!" >> $wget_log_path/$nowdate/deploy_logs.txt
+        sleep 3s
+        echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+
+    else
+        echo "下载$5包失败"
+        echo "下载$5包失败" >> $wget_log_path/$nowdate/deploy_logs.txt
+        sleep 3s
+    fi
+
+    echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" >> $wget_log_path/$nowdate/deploy_logs.txt
+}
+
+
+#----------回滚函数开始--------------------
+function rollback_ROOT(){
+
+    rm -rf $base_path/$1/webapps/ROOT
+    mv $base_path/tags/$1/$nowdate/$1.1 $base_path/$1/webapps/ROOT     
+    if [ $? = 0 ];then
+        echo "$1 还原成功！"
+        echo "$1还原成功！" >> $wget_log_path/$nowdate/deploy_logs.txt
+    else
+        echo "$1 还原失败！请输入正确项目，例如：tomcat8_oauth_8080, tomcat8_doc_8081, tomcat8_pub_8082, tomcat8_ih_8083, tomcat8_task_8084, tomcat8_order_8085, tomcat8_op_8086"
+        echo "$1 还原失败！" >> $wget_log_path/$nowdate/deploy_logs.txt
+    fi
+
+
+}
+#----------回滚函数结束--------------------
+
+
+############################################################################
+#------------------------------------命令执行区-----------------------------
+############################################################################
+
+#----------准备发布备份文件夹----------
+echo "开始执行一键发布!Start:`date "+%Y-%m-%d %H:%M:%S"`"
+sleep 3s
+if [ ! -d "$deploy_bak_path/$nowdate" ]; then
+  echo "创建发布备份文件夹：$deploy_bak_path/$nowdate"
+  mkdir -p $deploy_bak_path/$nowdate
+else
+  echo "原发布文件夹存在，删除发布备份文件夹：$deploy_bak_path/$nowdate 下面的文件"
+  rm -rf $deploy_bak_path/$nowdate/*
+fi
+
+if [ ! -d "$wget_log_path/$nowdate" ]; then
+  echo "创建wget下载日志文件夹：$wget_log_path/$nowdate"
+  mkdir -p $wget_log_path/$nowdate
+
+else
+  echo "删除wget下载日志文件夹：$deploy_bak_path/$nowdate 下面的文件"
+  rm -rf $wget_log_path/$nowdate/*
+
+    echo "创建日志清单。。。"
+    echo "      " >> $wget_log_path/$nowdate/deploy_logs.txt
+    echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" >> $wget_log_path/$nowdate/deploy_logs.txt
+    echo "$nowdate 一键发布日志清单" >> $wget_log_path/$nowdate/deploy_logs.txt
+    echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" >> $wget_log_path/$nowdate/deploy_logs.txt
+fi
+
+sleep 3
+
+
+
+
+############判断参数，如果没有参数，就发布所有的包----------
+
+if [ -z "$1" ]; then
+
+    echo "没输参数，那就全部发了哦(可在命令后添加需要发布的端口号，例如：./deploy 8083 或者 ./deploy 8082 8081,没有参数就全发，参数都错了就一个也不发。端口号只支持8080-8086。）"
+    sleep 3s
+    #############更新数据库------------
+    updateDB
+
+    #############tomcat8_oauth_8080发布----------
+    for i in ${#array_tomcat[@]}
+    do
+        deploy ${array_war[$i]}   ${array_log[$i]}      ${array_path[$i]}          ${array_name[$i]}    ${array_tomcat[$i]}  ${array_port[$i]}  ${array_wget_url[$i]}
+    done
+else
+
+    ############更新数据库------------
+    updateDB
+
+    t=$#
+    for ((i=1;i<=t;i++))
+        do
+
+        ################单独发布----------
+        for i in ${#array_tomcat[@]}
+        do
+        if [ "$1" == "${array_port[$i]" ]; then
+            sleep 2s
+            shift
+            deploy ${array_war[$i]}   ${array_log[$i]}      ${array_path[$i]}          ${array_name[$i]}    ${array_tomcat[$i]}  ${array_port[$i]}  ${array_wget_url[$i]}
+        fi
+        done
+
+        ###############回滚功能---------------
+        if [ "$1" == "--rollback" ];then
+            rollback_ROOT $2     
+            exit 0           
+        fi
+
+    done
+
+fi
+
+###############列出操作日志清单----------
+cat $wget_log_path/$nowdate/deploy_logs.txt
+
+###############脚本结束-------------
